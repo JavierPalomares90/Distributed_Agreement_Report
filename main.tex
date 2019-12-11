@@ -1,14 +1,132 @@
-\documentclass{article}
-\usepackage[utf8]{inputenc}
-
-\title{Distributed_Agreement}
-\author{javier.palomares.90 }
-\date{December 2019}
-
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+% The preceding line is only needed to identify funding in the first footnote. If that is unneeded, please comment it out.
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
 \begin{document}
+
+\title{Distributed Agreement\\
+}
+
+\author{\IEEEauthorblockN{Javier Palomares}
+\IEEEauthorblockA{\textit{Cockrell School of Engineering} \\
+\textit{The University of Texas at Austin}\\
+Austin, TX \\
+javierp@utexas.edu}
+\and
+\IEEEauthorblockN{Matt Molter}
+\IEEEauthorblockA{\textit{Cockrell School of Engineering} \\
+\textit{The University of Texas at Austin}\\
+Austin, TX \\
+mmolter@utexas.edu}
+}
 
 \maketitle
 
+\begin{abstract}
+This paper covers the topic of Distributed Agreement. Specifically, the Paxos algorithm by Lamport [1], a Byzantized version of Paxos [2], and a weighted Byzantized Paxos incorporating ideas from Garg [3].
+\end{abstract}
+
 \section{Introduction}
+This paper serves as a recap of Paxos, how to Byzantize Paxos, and how to incorporate weights into the Byzantine Paxos algorithm. In section II, we recap the Paxos algorithm as presented by Lamport in [1] for those unfamiliar with the algorithm. Those familiar can skip this section. In section III, we cover how we Byzantized Paxos per Lamport's recommendations in [2]. In section IV, we introduce the modifications to Byzantine Paxos in order to make it weighted as in the algorithms presented by Garg in [3]. In section V, we describe our results. In section VI, we present conclusions.
+
+\section{Introduction to Paxos}
+This section serves as an introduction to Paxos for those unfamiliar with the algorithm. For those familiar, this section can be skipped.
+
+Paxos as described by Lamport is a distributed, non-Byzantine fault tolerant consensus algorithm. It accounts for benign failures, but not malicious (Byzantine) faults. The model assumed is therefore an asynchronous, non-Byzantine model.
+
+You begin with a set of processes which can propose values, and a single value amongst the proposed must be chosen. If no value is proposed, no value is chosen, and if a value is chosen, all processes can learn of the selection. This leads to the below safety requirements per Lamport:
+\smallskip
+\begin{enumerate}
+\item Only a value that has been proposed may be chosen
+\item Only a single value is chosen
+\item A process never learns that a value has been chosen unless it actually has been.
+\end{enumerate}
+\smallskip
+
+Lamport does not specify liveness requirements other than that some value proposed is eventually chosen and that if a value is chosen, a process can eventually learn of the selection.
+
+We will not delve into the derivation of the algorithm, and will be operating off of a modified version of Paxos which Lamport refers to as $PCon$ in [3]. As in vanilla Paxos, there are three classes of agents: $proposers$, $acceptors$, and $learners$. The actions they perform should be self-explanatory. Paxos performs numbered ballots, each of which is orchestrated by a leader (the proposer). If $N$ is the number of acceptors (which can include the proposer itself), where $N > f$, a quorum is any $N – f$ acceptors. A simple way to require that any two quorums have a non-empty intersection (required for safety), we require that $N > 2f$. If a quorum of acceptors vote for a value, then that value is considered chosen.
+
+In the language of the algorithm, a proposer can make a proposal ballot number $b$ (proposal number $n$ in [1]) and value $v$. The proposal number is used to determine which proposal an acceptor will accept, and the value is the value which will be accepted. There are two-phases to the commit, $prepare$ and $accept$.
+
+The below properties follow the requirements of the algorithm as per $PCon$. Those familiar with the vanilla Paxos algorithm will notice several small differences.
+\smallskip
+\begin{enumerate}[leftmargin=4em]
+\item[P1.] An acceptor can vote for a value $v$ in ballot $b$ only if $v$ is safe at $b$
+\item[P2.] Different acceptors cannot vote for different values in the same ballot.
+\item[P3a.] If no acceptor in the quorum has voted in a ballot numbered less than $b$, then all values are safe at $b$
+\item[P3b.] If some acceptor in the quorum has voted, let $c$ be the highest-numbered ballot less than $b$ in which such a vote was cast. The value voted for in ballot $c$ is safe at $b$. (By P2, there is only one such value.)
+\end{enumerate}
+\smallskip
+The vanilla Paxos algorithm is as below.
+\smallskip
+
+\begin{enumerate}[leftmargin=5em]
+\item[Phase 1$a$] The ballot-$b$ leader sends a 1$a$ message to the acceptors.
+\item[Phase 1$b$] An acceptor responds to the leader’s ballot-$b$ 1$a$ message with a 1$b$ message containing the number of the highest-numbered ballot in which it has voted and the value it voted for in that ballot, or saying that it has cast no votes.
+\end{enumerate}
+\smallskip
+
+\begin{enumerate}[leftmargin=5em]
+\item[Phase 2$a$] Using the 1$b$ messages sent by a quorum of acceptors, the leader chooses a value v that is safe at $b$ and sends a 2$a$ message containing $v$ to the acceptors.
+\item[Phase 2$b$] Upon receipt of the leader’s ballot-$b$ 2$a$ message, an acceptor votes for $v$ in ballot $b$ by sending a 2$b$ message.
+\end{enumerate}
+\smallskip
+The modifications required to create $PCon$ are below. We require the addition of a 1$c$ action as well as a modification to phase 2$a$.
+\smallskip
+
+\begin{enumerate}[leftmargin=5em]
+\item[Phase 1$c$] Using the 1$b$ messages from a quorum of acceptors, the leader chooses a set of values that are safe at $b$ and sends a 1$c$ message for each of those values.
+\item[Phase 2$a$] The leader sends a 2a message for some value for which it has sent a 1c message.
+\end{enumerate}
+\smallskip
+
+These modifications result in the splitting up of the old phase 2$a$ message into two parts. What does this accomplish? There are two items; 1) it allows for multiple safe values and 2) it is important in reconfiguration by removing dependence on acceptors in lower level ballots. This informs future leaders of safe values so that they do not have to learn about votes cast in previous ballots.
+
+In order to choose a value to send in the 1$c$ message, it must satisfy P3a above, in addition to a new P3c below.
+\smallskip
+\begin{enumerate}[leftmargin=4em]
+\item[P3c] If a ballot-$c$ message with value $v$ has been sent, for some $c < b$, and (i) no acceptor in the quorum has voted in any ballot greater than $c$ and less than $b$, and (ii) any acceptor in the quorum that has voted in ballot $c$ voted for $v$ in that ballot, then $v$ is safe at $b$.
+\end{enumerate}
+\smallskip
+
+
+
+
+\section{Byzantizing Paxos}
+Byzantizing Paxos requires several modifications. The first is that a simple majority quorum is no longer satisfactory in order to guarantee a quorum of real acceptors. Instead, we require what Lamport refers to as a $Byzquorum$ in order to emulate a proper quorum. To define a Byzquorum, imagine that you have a set of $N$ processes which would normally require a quorum $q$ in order to choose a value. However, you are operating under the assumption that you now have $f$ $byzacceptors$ which may act in a malicious manner. To guarantee that you still have a valid quorum, you must now have a Byzquorum of $q + f$ byzacceptors. This satisfies P3a above, but P3b remains an issue. This is because there is no method of determining if a single message is from a real or Byzantine acceptor. We get around this by assuming that $N > 3f$, which means that any two quorums have at least $f + 1$ acceptors in common. This leads to the below modifications to P3a and P3b.
+\smallskip
+\begin{enumerate}[leftmargin=4em]
+\item[BP3a'.] If there is no ballot numbered less than $b$ in which $f + 1$ acceptors have voted, then all values are safe at $b$.
+\item[BP3b'.] If there is some ballot $c$ in which acceptors have voted and there is no higher-numbered ballot less than $b$ in which $f + 1$ acceptors have voted, then the value $v$ voted for in $c$ is safe at $b$
+\end{enumerate}
+\smallskip
+
+These modifications follow naturally from the distrust of $f$ processes. To guarantee that at least one acceptor which is genuine, we require the expected faulty number of processes $f$ in addition to the previously required single true acceptor. Since a Byzantine process can also act like a real process, this guarantees that we can tolerate at least $f$ faults. The problem with this method and vanilla Paxos is that it leads to a solution where we must have $>4f$ acceptors. Lamport gets around this using $PCon$ in addition to other modifications below.
+
+Also notice that this solution so far accounts only for malicious acceptors, and not a malicious leader. A malicious leader could send multiple 2$a$ messages for different values to different acceptors, leading to the choice of multiple values in future ballots. The solution is to eliminate the 2$a$ action and replace it with a 2$av$ action.
+
+In the 2$av$ action, when a leader sends an 2$a$ message, each acceptor that receives it then emulates the execution of the 2$a$ action. To do this, it sends the value to all other acceptors in order to confirm that the same value was sent to all acceptors. If it receives a byzquorum of 2$av$ messages in return, then it knows that the value was sent to a quorum of acceptors and can proceed with the 2$b$ action responding to the leader.
+ 
+To derive a general Byzantine Paxos, we add $f$ fake acceptors to $PCon$ in order to create $BPCon$. As stated above, the 2$a$ action is removed. Instead a leader requests to its acceptors that they perform a 2$a$ action, and they perform the 2$av$ action as above to provide a 2$b$ response. The acceptor is allowed to perform a 2$av$ action iff it has received the corresponding 1$c$ message and has not already performed a 2$av$ action.
+
+
+
+
+
+\section{Adding Weights to Paxos}
+
+\section{Results}
+An interesting result of Byzantizing Paxos is that you reduce the tolerance for non-Byzantine faults. This is due to the need to emulate a proper quorum in the face of an expected $N/3$ Byzantine faults. In order to emulate a proper quorum, you need a quorum plus the expected number of faulted processes to respond, meaning you are non-Byzantine fault tolerant to $5/6*N + 1$ as well. This suggests that the use of Byzantine tolerant Paxos should be carefully considered before implementation.
+
+\section{Conclusion}
 
 \end{document}
