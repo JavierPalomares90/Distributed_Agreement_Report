@@ -8,6 +8,8 @@
 \usepackage{textcomp}
 \usepackage{xcolor}
 \usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
 \def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
     T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
 \begin{document}
@@ -85,11 +87,11 @@ The modifications required to create $PCon$ are below. We require the addition o
 
 \begin{enumerate}[leftmargin=5em]
 \item[Phase 1$c$] Using the 1$b$ messages from a quorum of acceptors, the leader chooses a set of values that are safe at $b$ and sends a 1$c$ message for each of those values.
-\item[Phase 2$a$] The leader sends a 2a message for some value for which it has sent a 1c message.
+\item[Phase 2$a$] The leader sends a 2$a$ message for some value for which it has sent a 1$c$ message.
 \end{enumerate}
 \smallskip
 
-These modifications result in the splitting up of the old phase 2$a$ message into two parts. What does this accomplish? There are two items; 1) it allows for multiple safe values and 2) it is important in reconfiguration by removing dependence on acceptors in lower level ballots. This informs future leaders of safe values so that they do not have to learn about votes cast in previous ballots.
+These modifications result in the splitting up of the old phase 2$a$ message into two parts. What does this accomplish? There are two items; 1) it allows for multiple safe values and 2) it is important in reconfiguration by removing dependence on acceptors in lower level ballots. This informs future leaders of safe values so that they do not have to learn about votes cast in previous ballots before participating in the algorithm.
 
 In order to choose a value to send in the 1$c$ message, it must satisfy P3a above, in addition to a new P3c below.
 \smallskip
@@ -98,19 +100,20 @@ In order to choose a value to send in the 1$c$ message, it must satisfy P3a abov
 \end{enumerate}
 \smallskip
 
+The astute reader will notice that we have not focused on the learner portion of the algorithm. Its omission has no effect on the correctness of the rest of the algorithm.
 
 
 
 \section{Byzantizing Paxos}
-Byzantizing Paxos requires several modifications. The first is that a simple majority quorum is no longer satisfactory in order to guarantee a quorum of real acceptors. Instead, we require what Lamport refers to as a $Byzquorum$ in order to emulate a proper quorum. To define a Byzquorum, imagine that you have a set of $N$ processes which would normally require a quorum $q$ in order to choose a value. However, you are operating under the assumption that you now have $f$ $byzacceptors$ which may act in a malicious manner. To guarantee that you still have a valid quorum, you must now have a Byzquorum of $q + f$ byzacceptors. This satisfies P3a above, but P3b remains an issue. This is because there is no method of determining if a single message is from a real or Byzantine acceptor. We get around this by assuming that $N > 3f$, which means that any two quorums have at least $f + 1$ acceptors in common. This leads to the below modifications to P3a and P3b.
+Byzantizing Paxos requires several modifications. The naive method recognizes that a simple majority quorum is no longer satisfactory in order to guarantee a quorum of real acceptors. Instead, we require what Lamport refers to as a $Byzquorum$ in order to emulate a proper quorum. To define a Byzquorum, imagine that you have a set of $N$ processes which would normally require a quorum $q$ in order to choose a value. However, you are operating under the assumption that you now have $f$ $byzacceptors$ which may act in a malicious manner. To guarantee that you still have a valid quorum, you must now have a Byzquorum of $q + f$ byzacceptors. This satisfies P3a above, but P3b remains an issue. This is because there is no method of determining if a single message is from a real or Byzantine acceptor. We get around this by assuming that $N > 3f$, which means that any two quorums have at least $f + 1$ acceptors in common. This leads to the below modifications to P3a and P3b.
 \smallskip
 \begin{enumerate}[leftmargin=4em]
-\item[BP3a'.] If there is no ballot numbered less than $b$ in which $f + 1$ acceptors have voted, then all values are safe at $b$.
-\item[BP3b'.] If there is some ballot $c$ in which acceptors have voted and there is no higher-numbered ballot less than $b$ in which $f + 1$ acceptors have voted, then the value $v$ voted for in $c$ is safe at $b$
+\item[P3a'.] If there is no ballot numbered less than $b$ in which $f + 1$ acceptors have voted, then all values are safe at $b$.
+\item[P3b'.] If there is some ballot $c$ in which acceptors have voted and there is no higher-numbered ballot less than $b$ in which $f + 1$ acceptors have voted, then the value $v$ voted for in $c$ is safe at $b$
 \end{enumerate}
 \smallskip
 
-These modifications follow naturally from the distrust of $f$ processes. To guarantee that at least one acceptor which is genuine, we require the expected faulty number of processes $f$ in addition to the previously required single true acceptor. Since a Byzantine process can also act like a real process, this guarantees that we can tolerate at least $f$ faults. The problem with this method and vanilla Paxos is that it leads to a solution where we must have $>4f$ acceptors. Lamport gets around this using $PCon$ in addition to other modifications below.
+These modifications follow naturally from the distrust of $f$ processes. To guarantee that at least one acceptor which is genuine, we require the expected faulty number of processes $f$ in addition to the previously required single true acceptor. Since a Byzantine process can also act like a real process, this guarantees that we can tolerate at least $f$ faults. The problem with this method and vanilla Paxos is that it leads to a solution where we must have $>4f$ acceptors. Lamport gets around this using $PCon$ in addition to other modifications that will be discussed below.
 
 Also notice that this solution so far accounts only for malicious acceptors, and not a malicious leader. A malicious leader could send multiple 2$a$ messages for different values to different acceptors, leading to the choice of multiple values in future ballots. The solution is to eliminate the 2$a$ action and replace it with a 2$av$ action.
 
@@ -118,14 +121,55 @@ In the 2$av$ action, when a leader sends an 2$a$ message, each acceptor that rec
  
 To derive a general Byzantine Paxos, we add $f$ fake acceptors to $PCon$ in order to create $BPCon$. As stated above, the 2$a$ action is removed. Instead a leader requests to its acceptors that they perform a 2$a$ action, and they perform the 2$av$ action as above to provide a 2$b$ response. The acceptor is allowed to perform a 2$av$ action iff it has received the corresponding 1$c$ message and has not already performed a 2$av$ action.
 
+In order for the leader to send a 1$c$ message, it must know that it is a legal 1$c$ message. In order for it to determine if it is legal, it relies on additional information added to the 1$b$ messages from the acceptors in its quorum. The acceptors remember all values for which they have sent a 2$av$ message, as well as the highest ballot number that it sent for each value $v$. When sending a 1$b$ message to the leader, this is included so that the leader can determine safe values. Then, given a set $S$ of ballot-$b$ messages from a byzquorum, the following properties imply P3a and P3c per Lamport:
+\smallskip
+\begin{enumerate}[leftmargin=4em]
+\item[BP3a.] Each message in $S$ asserts that its sender has not voted.
+\item[BP3b.] If a ballot-$c$ message with value $v$ has been sent, for some $c < b$, and (i) no acceptor in the quorum has voted in any ballot greater than $c$ and less than $b$, and (ii) any acceptor in the quorum that has voted in ballot $c$ voted for $v$ in that ballot, then $v$ is safe at $b$.
+\end{enumerate}
+\smallskip
 
+Lamport then goes on to mention that condition (ii) in BP3b can be weakened to the below.
+\smallskip
+\begin{enumerate}[leftmargin=4em]
+\item[(b')] there are $f + 1$ 1$b$ messages from byzacceptors saying that they
+sent a 2$av$ message with value $v$ in a ballot $\geq c$.
+\end{enumerate}
+\smallskip
 
+Now, with the information sent to the leader by acceptors in the 1$b$ message, it can 
 
+\section{Applying Weighted Byzantine Agreement to Byzantized Paxos}
+Before we delve into adding weights to Paxos, we'll begin by introducing the motivation behind adding weights. In a typical Byzantine system, equal weights are given to all nodes. This can be viewed as all nodes are seen as equally trustworthy by all other nodes. This results in the classic result in which the total number of nodes $N > 3f + 1$. This can be improved upon by assigning different weights (levels of trust) to different nodes and modifying the algorithm as will be discussed below.
 
-\section{Adding Weights to Paxos}
+To begin with, we have an abstract notion of trust, which we represent with weights, $w[i]$ for each node $P_i$, where $0 \leq w[i] \leq 1$ . Each node has its own level of trust which is known across the system, the assignment of which is beyond the scope of this paper. Suffice it to say that a higher weight assigned to a node means that we have a higher level of trust in that node and vice versa. We now wish to tolerate a weight of failed nodes of at most $\rho$.
+
+The modifications to Byzantized Paxos consist primarily of changing the requirements for a byzquorum. Previously, in order to guarantee a proper quorum when $f < N/3$, the required number of nodes for a byzquorum was $N/2 + 1 + f$, subbing in $f < N/3$, the number of nodes in a quorum increases to $N/2 + 1 + N/3$, or $5N/6 + 1$. When converting to weights for a $\rho < 1/3$, this translates to a weight of $> 5/6$ to achieve a byzquorum.
+
+Now that we have introduced the concept of weighted Byzantine agreement, let's use an example to see how this can be used to improve Byzantized Paxos.
+
+First, visualize a system with 3 processes, ${P_1, P_2, P_3}$. In traditional Byzantine Paxos, all three would have equal weight, and if any single process were to lie, agreement becomes impossible. Now, imagine the three processes respectively have weights ${0.5, 0.4, 0.1}$, representing levels of trust. For a byzquorum to be achieved, the weights of real acceptors need to sum to greater than $5/6$. It can be seen that if the liar is $P_3$, this has created a case where 1/3 of processes can be malicious, yet agreement can still be achieved. 
+
+This does not mean that any process failure can be tolerated in the above example. The failure of $P_1$ or $P_2$ still results in an unsolvable system. However, the result remains very powerful, particularly in large, dynamic systems. For example, by assigning long running processes a higher weight, and newly joined processes lower weight, you can remain Byzantine fault tolerant even in the face of a large number of malicious processes joining your system.
+
+\section{Final Algorithm}
+The failure model assumed is asynchronous, with malicious leaders and acceptors possible. One restriction we placed on our model for simplicity is that no process can pretend to be another process, eliminating the need for message authentication; we believe this is beyond the scope of this course.
+
+The basic algorithm is very similar to that in $BPCon$ as proposed by Lamport, but with generalized weights instead of the assumption that all processes have equal weight. We will refer to it from here on as $WBPCon$ for Weighted Byzantine Paxos. The required properties maintained are below.
+
+\smallskip
+\begin{enumerate}[leftmargin=4em]
+\item[WBP1.] An acceptor can vote for a value $v$ in ballot $b$ only if $v$ is safe at $b$
+\item[WBP2.] Different acceptors cannot vote for different values in the same ballot.
+\item[WBP3a.] Each message in $S$ asserts that its sender has not voted.
+\item[WBP3b.] If there is some ballot $c$ in which acceptors have voted and there is no higher-numbered ballot less than $b$ in which acceptors with combined weight $\geq \rho$ have voted, then the value $v$ voted for in $c$ is safe at $b$
+\item[WBP3c.] For some $c < b$ and some value $v$, (a) each message in S asserts that (i) its sender has not voted in any ballot greater than $c$ and (ii) if it voted in $c$ then that vote was for $v$, and (b) there are $\geq \rho$ weighted 1$b$ messages from byzacceptors saying that they sent a 2$av$ message with value $v$ in a ballot $\geq c$.
+\end{enumerate}
+\smallskip
+
 
 \section{Results}
-An interesting result of Byzantizing Paxos is that you reduce the tolerance for non-Byzantine faults. This is due to the need to emulate a proper quorum in the face of an expected $N/3$ Byzantine faults. In order to emulate a proper quorum, you need a quorum plus the expected number of faulted processes to respond, meaning you are non-Byzantine fault tolerant to $5/6*N + 1$ as well. This suggests that the use of Byzantine tolerant Paxos should be carefully considered before implementation.
+An interesting result of Byzantizing Paxos is that you reduce the tolerance for non-Byzantine faults. This is due to the need to emulate a proper quorum in the face of an $N/3$ Byzantine faults. In order to emulate a proper quorum, you need a quorum plus the expected number of faulted processes to respond, meaning you are non-Byzantine fault tolerant to $5/6*N + 1$ as well. This suggests that the use of Byzantine tolerant Paxos should be carefully considered before implementation, weighing the expected cost of Byzantine interference vs expected number and frequency of benign faults.
 
 \section{Conclusion}
 
