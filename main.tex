@@ -37,7 +37,7 @@ This paper covers the topic of Distributed Agreement. Specifically, the Paxos al
 \end{abstract}
 
 \section{Introduction}
-This paper serves as a recap of Paxos, how to incorporate weights into Paxos, how to Byzantize Paxos, and how to incorporate weights into the Byzantine Paxos algorithm. In section II, we recap the Paxos algorithm as presented by Lamport in [1] for those unfamiliar with the algorithm. Those familiar can skip this section. In section III, we introduce weighted Paxos. In section IV, we cover how we Byzantized Paxos per Lamport's recommendations in [2]. In section V, we introduce the modifications to Byzantine Paxos in order to make it weighted as in the algorithms presented by Garg in [3]. In section VI, we describe our results. In section VII, we present conclusions.
+This paper serves as a recap of Paxos, how to incorporate weights into Paxos, how to Byzantize Paxos, and how to incorporate weights into the Byzantine Paxos algorithm. In section II, we recap the Paxos algorithm as presented by Lamport in [1] for those unfamiliar with the algorithm. Those familiar can skip this section. In section III, we introduce weighted Paxos. In section IV, we cover how we Byzantized Paxos for $f < N/4$ failed processes per Lamport's recommendations in [2]. In section V, we introduce the modifications to Byzantine Paxos in order to make it weighted as in the algorithms presented by Garg and Bridgman in [3]. In section VI, we describe our results. In section VII, we present the direction for future works and conclusion.
 
 \section{Introduction to Paxos}
 This section serves as an introduction to Paxos for those unfamiliar with the algorithm. For those familiar, this section can be skipped.
@@ -118,7 +118,7 @@ Practically, implementing the weighted Paxos is simple if you already have a fun
 \section{Byzantizing Paxos}
 Byzantizing Paxos requires several modifications. Let us first deal with Byzantine acceptors.
 The naive method recognizes that a simple majority quorum is no longer satisfactory in order to guarantee a quorum of real acceptors. Let us first examine the case in which $f < N/4$. Instead of a quorum, we require what Lamport refers to as a $Byzquorum$ in order to emulate a proper quorum. To define a Byzquorum, imagine that you have a set of $N$ processes which would normally require a quorum $q$ in order to choose a value. However, you are operating under the assumption that you now have $f$ $byzacceptors$ which may act in a malicious manner. To guarantee that you still have a valid quorum, you must now have a Byzquorum of $q + f$ byzacceptors, which in the case of $f < N/4$, means you require $3f + 1$ acceptors to reach a proper quorum.
-This satisfies P3a above, but P3b remains an issue. This is because there is no method of determining if a single message is from a real or Byzantine acceptor. We get around this by assuming that $N > 3f$, which means that any two quorums have at least $f + 1$ acceptors in common. This leads to the below modifications to P3a and P3b.
+This satisfies P3a above, but P3b remains an issue. This is because there is no method of determining if a single message is from a real or Byzantine acceptor. To see how P3b is satisfied, we can use the assumption that $N > 3f$, which means that any two quorums have at least $f + 1$ acceptors in common. This leads to the below modifications to P3a and P3b for selecting safe values.
 \smallskip
 \begin{enumerate}[leftmargin=4em]
 \item[P3a'.] If there is no ballot numbered less than $b$ in which $f + 1$ acceptors have voted, then all values are safe at $b$.
@@ -126,13 +126,13 @@ This satisfies P3a above, but P3b remains an issue. This is because there is no 
 \end{enumerate}
 \smallskip
 
-These modifications follow naturally from the distrust of $f$ processes. To guarantee that at least one acceptor which is genuine, we require the expected faulty number of processes $f$ in addition to the previously required single true acceptor. Since a Byzantine process can also act like a real process, this guarantees that we can tolerate at least $f$ faults. The problem with this method and vanilla Paxos is that it leads to a solution where we must have $>4f$ acceptors. Lamport gets around this using $PCon$ in addition to other modifications involving digital signatures. We did not implement this due to lack of time and believing the digital signature portion was beyond the scope of this course, so our solution requires $> 4f$ acceptors.
+These modifications follow naturally from the distrust of $f$ processes. To guarantee that at least one acceptor which is genuine, we require the expected faulty number of processes $f$ in addition to the previously required single true acceptor. Since a Byzantine process can also act like a real process, this guarantees that we can tolerate at least $f$ faults. The problem with this method and vanilla Paxos is that it leads to a solution where we must have $>4f$ acceptors. Lamport gets around this using $PCon$ in addition to other modifications involving digital signatures. We did not implement the full solution due to lack of time and believing the digital signature portion was beyond the scope of this course, so our solution requires $> 4f$ acceptors.
 
 Also notice that this solution so far accounts only for malicious acceptors, and not a malicious leader. A malicious leader could send multiple 2$a$ messages for different values to different acceptors, leading to the choice of multiple values in future ballots. The solution is to eliminate the 2$a$ action and replace it with a 2$av$ action.
 
-In the 2$av$ action, when a leader sends a 2$a$ message, each acceptor that receives it then emulates the execution of the 2$a$ action. To do this, it sends the value to all other acceptors in order to confirm that the same value was sent to all acceptors. Once an acceptor receives a byzquorum of $3f + 1$ 2$av$ messages, then it knows that the value was sent to a quorum of acceptors and can proceed with the 2$b$ action responding to the leader.
+In the 2$av$ action, when a leader sends a 2$a$ message, each acceptor that receives it then emulates the execution of the 2$a$ action. To do this, it sends the value to all other acceptors in order to confirm that the same value was sent to all acceptors. Once an acceptor receives a byzquorum of $3f + 1$ 2$av$ messages, then it knows that the value was sent to a quorum of real acceptors and can proceed with the 2$b$ action responding to the leader.
  
-To derive a general Byzantine Paxos, we add $f$ fake acceptors to $PCon$ in order to create $BPCon$. As stated above, the 2$a$ action is removed. Instead, a leader requests to its acceptors that they emulate a 2$a$ action, and they perform the 2$av$ action as above to provide a 2$b$ response. The acceptor is allowed to perform a 2$av$ action iff it has received the corresponding 1$c$ message and has not already performed a 2$av$ action.
+To derive a general Byzantine Paxos, we add $f$ fake acceptors to $PCon$ in order to create $BPCon$. As stated above, the explicit 2$a$ action is removed. Instead, a leader requests to its acceptors that they emulate a 2$a$ action, and they perform the 2$av$ action as above to provide a 2$b$ response. The acceptor is allowed to perform a 2$av$ action iff it has received the corresponding 1$c$ message and has not already performed a 2$av$ action.
 
 In order for the leader to send a 1$c$ message, the acceptors must know that the message is legitimate. In order to determine this, they perform a 2$av$ action when performing the 1$b$ action as well to verify that they all received the same value and that they can consider that value as safe when told by the leader.
 
@@ -143,7 +143,7 @@ In order to create our final Weighted Byzantine Paxos, the modifications to Byza
 
 Now that we have introduced the concept of weighted Byzantine agreement, let's use an example to see how this can be used to improve Byzantized Paxos as we did with vanilla Paxos.
 
-First, visualize a system with 3 processes, ${P_1, P_2, P_3}$. In traditional Byzantine Paxos, all three would have equal weight, and if any single process were to lie, agreement becomes impossible. Now, imagine the three processes respectively have weights ${0.5, 0.3, 0.2}$, representing levels of trust. For a byzquorum to be achieved, the weights of real acceptors need to sum to greater than $1 - \rho$, or $3/4$. It can be seen that if the liar is $P_3$, this has created a case where 1/3 of processes can be malicious, yet agreement can still be achieved. 
+First, visualize a system with 4 processes, ${P_1, P_2, P_3, P_4}$. In traditional Byzantine Paxos, all four would have equal weight, and if any single process were to lie, agreement becomes impossible. Now, imagine the three processes respectively have weights ${0.4, 0.4, 0.1, 0.1}$, representing levels of trust. For a byzquorum to be achieved, the weights of real acceptors need to sum to greater than $1 - \rho$, or $3/4$. It can be seen that if the liar is $P_3$ or $P_4$, or both are liars, this has created a case where more than $1/4$ of processes can be malicious, yet agreement can still be achieved. 
 
 This does not mean that any process failure can be tolerated in the above example. The failure of $P_1$ or $P_2$ still results in an unsolvable system. However, the result remains very powerful, particularly in dynamic systems. For example, by assigning long running processes a higher weight, and newly joined processes lower weight, you can remain Byzantine fault tolerant even in the face of a large number of malicious processes joining your system.
 
@@ -184,6 +184,23 @@ Once the base performance was compared to vanilla Paxos, we began bringing down 
 Then, we applied the weights ${0.4, 0.2, 0.2, 0.2}$. This allowed any combination of 2 processes from ${P_2, P_3, P_4}$ to be brought down and consensus can still be reached. Losing just $P_1$ also allowed us to continue to reach consensus. However, losing $P_1$ and any other process resulted in failure.
 Lastly, we assigned a weight to $P_1$ high enough to reach agreement on its own, simulating a centralized algorithm. In this case, we assigned ${1, 0, 0, 0}$ respectively, though any combination where $w[1] > 0.5$ is sufficient to model this behavior.
 The behavior is similar for the Weighted Byzantized Paxos algorithm. As long as the weights are distributed in such a way that the weights of the real acceptors sum to $> 3/4$, there can be an arbitrary number of fake acceptors.
-A mildly interesting result of Byzantizing Paxos that was not stated explicitly in [2] is that you reduce the tolerance for non-Byzantine faults. This is due to the need to emulate a proper quorum in the face of $N/4$ Byzantine faults. If $> N/4$ processes crash, there is no way to tell if the remaining processes are Byzantine or non-Byzantine. If enough remaining processes are Byzantine, then there is no guarantee of liveness.
+
+\section{Future Works}
+We would like to complete the implementation of the $3f + 1$ version of the Byzantine Paxos algorithm, as well as incorporate weights in that algorithm. We also would like to expand our testing of our Byzantized Paxos, as we did not have time to thoroughly test it.
+An important action to implement is an algorithm to update weights as the system runs and it learns more about which processes are more/less trustworthy. This was a non-trivial addition that we did not have time to implement.
+The learner portion of the algorithm remains incomplete. To make this a fully functioning version of Paxos, the addition of learners is essential.
+Lastly, we would like to add support for reconfiguration. Permanently removing nodes from the system is currently impossible. Their agreement remains unavailable and decreases fault tolerance of the remaining nodes. It is also impossible to add new nodes to a live system, which would be essential for making this a production ready system.
+
+\Section{Conclusion}
+A mildly interesting result of Byzantizing Paxos that was not stated explicitly in [2] is that you reduce the tolerance for non-Byzantine faults. This is due to the need to emulate a proper quorum in the face of $N/4$ Byzantine faults. If $ > N/4$ processes crash, there is no way to tell if the remaining processes are Byzantine or non-Byzantine. If enough remaining processes are Byzantine, then there is no guarantee of liveness with a smaller quorum, so benign fault tolerance is reduced.
+Implementing a Byzantize Paxos is also non-trivial. Even moreso for the $N > 3f$ case. Applying weights to the $N > 4f$ case allows a more optimal solution than the simple $N > 4f$ solution with less complicated modifications than required to reach the true $N > 3f$ solution. In a fast paced, low resource organization, this solution could be presented as more optimal. 
+In addition, the weighted algorithm allows the business user to tailor the algorithm to their particular needs in regards to budget and fault tolerance requirements with minimal low-level code changes. Adding a UI to select weights would make this an even more trivial adjustment.
+
+\begin{thebibliography}{00}
+\bibitem{b1} Lamport, L. (2001). Paxos Made Simple. [online] Microsoft Research. Available at: https://www.microsoft.com/en-us/research/publication/paxos-made-simple/.
+\bibitem{b2} Lamport, L. (2011). Byzantizing paxos by refinement. [online] Dl.acm.org. Available at: https://dl.acm.org/citation.cfm?id=2075058.
+\bibitem{b3} Garg, V. and Bridgman, J. (2011). [online] UTexas.edu. Available at: http://users.ece.utexas.edu/~garg/dist/ipdps11.pdf.
+\end{thebibliography}
+\vspace{12pt}
 
 \end{document}
